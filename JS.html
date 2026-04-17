@@ -1,0 +1,82 @@
+<script>
+let userData = null;
+
+function showLoading(v) { document.getElementById('loading').style.display = v ? 'flex' : 'none'; }
+
+function doLogin() {
+  const u = document.getElementById('user').value;
+  const p = document.getElementById('pass').value;
+  showLoading(true);
+  google.script.run.withSuccessHandler(res => {
+    showLoading(false);
+    if(res.status === 'success') {
+      userData = res.user;
+      document.getElementById('login-page').classList.add('hidden');
+      document.getElementById('main-app').classList.remove('hidden');
+      if(userData.role === 'Admin' || userData.role === 'Officer') {
+        document.getElementById('admin-menus').classList.remove('hidden');
+      }
+      loadDashboard();
+    } else {
+      Swal.fire('ผิดพลาด', res.message, 'error');
+    }
+  }).login(u, p);
+}
+
+function loadDashboard() {
+  showLoading(true);
+  google.script.run.withSuccessHandler(data => {
+    showLoading(false);
+    let html = `
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div class="bg-white p-6 rounded-xl shadow-sm border-l-4 border-blue-500">
+          <p class="text-gray-500 text-sm">ทั้งหมด</p>
+          <h3 class="text-2xl font-bold">${data.stats.total}</h3>
+        </div>
+        <div class="bg-white p-6 rounded-xl shadow-sm border-l-4 border-yellow-500">
+          <p class="text-gray-500 text-sm">รอประเมิน</p>
+          <h3 class="text-2xl font-bold">${data.stats.pending}</h3>
+        </div>
+        <div class="bg-white p-6 rounded-xl shadow-sm border-l-4 border-orange-500">
+          <p class="text-gray-500 text-sm">กำลังซ่อม</p>
+          <h3 class="text-2xl font-bold">${data.stats.fixing}</h3>
+        </div>
+        <div class="bg-white p-6 rounded-xl shadow-sm border-l-4 border-green-500">
+          <p class="text-gray-500 text-sm">เสร็จสิ้น</p>
+          <h3 class="text-2xl font-bold">${data.stats.done}</h3>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="bg-white p-6 rounded-xl shadow-sm"><canvas id="catChart"></canvas></div>
+        <div class="bg-white p-6 rounded-xl shadow-sm"><canvas id="barChart"></canvas></div>
+      </div>
+    `;
+    document.getElementById('page-content').innerHTML = html;
+    renderCharts(data.catStats);
+  }).getAdminDashboardData();
+}
+
+function renderCharts(catData) {
+  const ctx = document.getElementById('catChart').getContext('2d');
+  new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: Object.keys(catData),
+      datasets: [{
+        data: Object.values(catData),
+        backgroundColor: ['#1E40AF', '#3B82F6', '#10B981', '#F59E0B', '#EF4444']
+      }]
+    },
+    options: { plugins: { title: { display: true, text: 'สัดส่วนงานซ่อมตามหมวดหมู่' } } }
+  });
+  // Bar Chart สำหรับสถิติย้อนหลัง (ตัวอย่าง Static เพื่อลดความซับซ้อน)
+  const ctx2 = document.getElementById('barChart').getContext('2d');
+  new Chart(ctx2, {
+    type: 'bar',
+    data: {
+      labels: ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.'],
+      datasets: [{ label: 'จำนวนงาน', data: [12, 19, 3, 5, 2, 3], backgroundColor: '#3B82F6' }]
+    }
+  });
+}
+</script>
