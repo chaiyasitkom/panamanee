@@ -1,82 +1,186 @@
 <script>
-let userData = null;
+  let currentUser = null;
 
-function showLoading(v) { document.getElementById('loading').style.display = v ? 'flex' : 'none'; }
+  // --- Utility Functions ---
+  function showLoader() { document.getElementById('loader').classList.remove('hidden'); }
+  function hideLoader() { document.getElementById('loader').classList.add('hidden'); }
+  function toggleSidebar() { 
+    const sb = document.getElementById('sidebar');
+    sb.classList.toggle('-translate-x-full'); // สำหรับ Mobile (ต้องปรับ CSS เพิ่มเติมสำหรับ Responsive สมบูรณ์แบบ)
+  }
 
-function doLogin() {
-  const u = document.getElementById('user').value;
-  const p = document.getElementById('pass').value;
-  showLoading(true);
-  google.script.run.withSuccessHandler(res => {
-    showLoading(false);
-    if(res.status === 'success') {
-      userData = res.user;
-      document.getElementById('login-page').classList.add('hidden');
-      document.getElementById('main-app').classList.remove('hidden');
-      if(userData.role === 'Admin' || userData.role === 'Officer') {
-        document.getElementById('admin-menus').classList.remove('hidden');
+  // --- Login System ---
+  function handleLogin(e) {
+    e.preventDefault();
+    showLoader();
+    const user = document.getElementById('username').value;
+    const pass = document.getElementById('password').value;
+
+    google.script.run.withSuccessHandler(res => {
+      hideLoader();
+      if(res.status === 'success') {
+        currentUser = res.user;
+        initApp();
+      } else {
+        Swal.fire('เกิดข้อผิดพลาด', res.message, 'error');
       }
-      loadDashboard();
-    } else {
-      Swal.fire('ผิดพลาด', res.message, 'error');
-    }
-  }).login(u, p);
-}
+    }).verifyLogin(user, pass);
+  }
 
-function loadDashboard() {
-  showLoading(true);
-  google.script.run.withSuccessHandler(data => {
-    showLoading(false);
-    let html = `
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <div class="bg-white p-6 rounded-xl shadow-sm border-l-4 border-blue-500">
-          <p class="text-gray-500 text-sm">ทั้งหมด</p>
-          <h3 class="text-2xl font-bold">${data.stats.total}</h3>
-        </div>
-        <div class="bg-white p-6 rounded-xl shadow-sm border-l-4 border-yellow-500">
-          <p class="text-gray-500 text-sm">รอประเมิน</p>
-          <h3 class="text-2xl font-bold">${data.stats.pending}</h3>
-        </div>
-        <div class="bg-white p-6 rounded-xl shadow-sm border-l-4 border-orange-500">
-          <p class="text-gray-500 text-sm">กำลังซ่อม</p>
-          <h3 class="text-2xl font-bold">${data.stats.fixing}</h3>
-        </div>
-        <div class="bg-white p-6 rounded-xl shadow-sm border-l-4 border-green-500">
-          <p class="text-gray-500 text-sm">เสร็จสิ้น</p>
-          <h3 class="text-2xl font-bold">${data.stats.done}</h3>
-        </div>
-      </div>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div class="bg-white p-6 rounded-xl shadow-sm"><canvas id="catChart"></canvas></div>
-        <div class="bg-white p-6 rounded-xl shadow-sm"><canvas id="barChart"></canvas></div>
-      </div>
-    `;
-    document.getElementById('page-content').innerHTML = html;
-    renderCharts(data.catStats);
-  }).getAdminDashboardData();
-}
+  function logout() {
+    currentUser = null;
+    document.getElementById('view-app').classList.add('hidden');
+    document.getElementById('view-login').classList.remove('hidden');
+  }
 
-function renderCharts(catData) {
-  const ctx = document.getElementById('catChart').getContext('2d');
-  new Chart(ctx, {
-    type: 'doughnut',
-    data: {
-      labels: Object.keys(catData),
-      datasets: [{
-        data: Object.values(catData),
-        backgroundColor: ['#1E40AF', '#3B82F6', '#10B981', '#F59E0B', '#EF4444']
-      }]
-    },
-    options: { plugins: { title: { display: true, text: 'สัดส่วนงานซ่อมตามหมวดหมู่' } } }
-  });
-  // Bar Chart สำหรับสถิติย้อนหลัง (ตัวอย่าง Static เพื่อลดความซับซ้อน)
-  const ctx2 = document.getElementById('barChart').getContext('2d');
-  new Chart(ctx2, {
-    type: 'bar',
-    data: {
-      labels: ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.'],
-      datasets: [{ label: 'จำนวนงาน', data: [12, 19, 3, 5, 2, 3], backgroundColor: '#3B82F6' }]
+  // --- Initialize App ---
+  function initApp() {
+    document.getElementById('view-login').classList.add('hidden');
+    document.getElementById('view-app').classList.remove('hidden');
+    
+    document.getElementById('user-display-name').innerText = currentUser.name;
+    document.getElementById('user-display-role').innerText = currentUser.role;
+    document.getElementById('user-avatar').innerText = currentUser.name.charAt(0);
+
+    buildMenu();
+    loadPage('dashboard'); // หน้าแรก
+  }
+
+  function buildMenu() {
+    const nav = document.getElementById('nav-menu');
+    nav.innerHTML = ''; // Clear
+    
+    const menus = [
+      { id: 'dashboard', icon: 'fa-chart-pie', text: 'หน้าหลัก', roles: ['Admin', 'Officer', 'User', 'Reporter', 'Director'] },
+      { id: 'new-repair', icon: 'fa-plus-circle', text: 'แจ้งซ่อมใหม่', roles: ['User', 'Reporter', 'Admin'] },
+      { id: 'all-repairs', icon: 'fa-clipboard-list', text: 'รายการทั้งหมด', roles: ['Admin', 'Officer', 'Technician'] },
+      // เพิ่มเมนูรายการเครื่องจักรตรงนี้
+      { id: 'machines', icon: 'fa-tractor', text: 'รายการเครื่องจักร', roles: ['Admin', 'Officer', 'Technician', 'Director'] },
+      { id: 'users', icon: 'fa-users', text: 'จัดการผู้ใช้งาน', roles: ['Admin'] }
+    ];
+
+    menus.forEach(m => {
+      if(m.roles.includes(currentUser.role)) {
+        nav.innerHTML += `<div class="nav-item" id="menu-${m.id}" onclick="loadPage('${m.id}')">
+                            <i class="fa-solid ${m.icon} w-6"></i>
+                            <span>${m.text}</span>
+                          </div>`;
+      }
+    });
+  }
+
+  // --- SPA Router ---
+  function loadPage(pageId) {
+    // อัปเดตสถานะ Active ของเมนู
+    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+    const menuEl = document.getElementById(`menu-${pageId}`);
+    if(menuEl) menuEl.classList.add('active');
+
+    const content = document.getElementById('content-area');
+    
+    if (pageId === 'dashboard') {
+      content.innerHTML = `<h2 class="text-2xl font-bold mb-4 text-[#1E40AF]">Dashboard Overview</h2>
+                           <div class="grid grid-cols-1 md:grid-cols-4 gap-4" id="dash-cards">กำลังโหลด...</div>`;
+      
+      // ดึงข้อมูลสถิติ
+      google.script.run.withSuccessHandler(stats => {
+        document.getElementById('dash-cards').innerHTML = `
+          <div class="bg-white p-4 rounded-xl shadow border-l-4 border-[#3B82F6]">
+            <p class="text-sm text-gray-500">ทั้งหมด</p><h3 class="text-3xl font-bold">${stats.total}</h3>
+          </div>
+          <div class="bg-white p-4 rounded-xl shadow border-l-4 border-yellow-400">
+            <p class="text-sm text-gray-500">รอประเมิน</p><h3 class="text-3xl font-bold">${stats.pending}</h3>
+          </div>
+          <div class="bg-white p-4 rounded-xl shadow border-l-4 border-purple-500">
+            <p class="text-sm text-gray-500">กำลังดำเนินการ</p><h3 class="text-3xl font-bold">${stats.doing}</h3>
+          </div>
+          <div class="bg-white p-4 rounded-xl shadow border-l-4 border-green-500">
+            <p class="text-sm text-gray-500">เสร็จสิ้น</p><h3 class="text-3xl font-bold">${stats.done}</h3>
+          </div>
+        `;
+      }).getDashboardStats();
     }
-  });
-}
+    
+    else if (pageId === 'new-repair') {
+      content.innerHTML = `
+        <h2 class="text-2xl font-bold mb-4 text-[#1E40AF]">ฟอร์มแจ้งซ่อม</h2>
+        <div class="bg-white p-6 rounded-xl shadow max-w-2xl">
+          <form id="repairForm" onsubmit="submitRepair(event)">
+            <div class="mb-4">
+              <label class="block mb-1 font-medium">ไซต์งาน / โครงการ</label>
+              <input type="text" id="r_project" class="w-full border rounded p-2" required>
+            </div>
+            <div class="mb-4">
+              <label class="block mb-1 font-medium">อาการ / ปัญหา</label>
+              <textarea id="r_issue" rows="3" class="w-full border rounded p-2" required></textarea>
+            </div>
+            <div class="mb-4">
+              <label class="block mb-1 font-medium">แนบรูปภาพ (อัปโหลดลง Google Drive)</label>
+              <input type="file" id="r_file" accept="image/*" class="w-full">
+              <div id="uploadProgress" class="h-2 bg-gray-200 rounded mt-2 hidden">
+                <div class="h-full bg-[#3B82F6] rounded" style="width: 0%"></div>
+              </div>
+            </div>
+            <button type="submit" class="bg-[#1E40AF] text-white px-6 py-2 rounded hover:bg-[#1e3a8a]">บันทึกข้อมูล</button>
+          </form>
+        </div>
+      `;
+    }
+    
+    else if (pageId === 'machines') {
+      // เรียกฟังก์ชันจากไฟล์ JS_Machines.html ที่สร้างแยกไว้
+      renderMachinesPage(); 
+    }
+    
+    else {
+      content.innerHTML = `<h2 class="text-xl">กำลังพัฒนาส่วนนี้ (${pageId})</h2>`;
+    }
+  }
+
+  // --- Submit & File Upload Logic (Resumable Concept) ---
+  async function submitRepair(e) {
+    e.preventDefault();
+    showLoader();
+    
+    const fileInput = document.getElementById('r_file');
+    let fileId = null;
+
+    // ถ้ามีการแนบไฟล์ จัดการอัปโหลดไฟล์ก่อน
+    if (fileInput.files.length > 0) {
+      const file = fileInput.files[0];
+      const reader = new FileReader();
+      
+      const fileUploaded = new Promise((resolve, reject) => {
+        reader.onload = function(e) {
+          const rawLog = reader.result.split(',')[1];
+          // ส่งไฟล์ผ่าน google.script.run
+          google.script.run.withSuccessHandler(id => resolve(id))
+            .withFailureHandler(err => reject(err))
+            .uploadFileChunk(file.name, file.type, rawLog, null);
+        };
+      });
+      reader.readAsDataURL(file);
+      
+      try {
+        fileId = await fileUploaded;
+      } catch (err) {
+        hideLoader();
+        return Swal.fire('Error', 'อัปโหลดไฟล์ล้มเหลว: ' + err.message, 'error');
+      }
+    }
+
+    // เมื่ออัปโหลดไฟล์เสร็จ บันทึกข้อมูลลง Sheet
+    const formData = {
+      project: document.getElementById('r_project').value,
+      issue: document.getElementById('r_issue').value,
+      reporter: currentUser.name,
+      category: 'ทั่วไป' // ปกติรับค่าจาก Dropdown
+    };
+
+    google.script.run.withSuccessHandler(repairId => {
+      hideLoader();
+      Swal.fire('สำเร็จ', `แจ้งซ่อมเรียบร้อย เลขที่อ้างอิง: ${repairId}`, 'success');
+      loadPage('dashboard');
+    }).saveNewRepair(formData, [fileId]);
+  }
 </script>
