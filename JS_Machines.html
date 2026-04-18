@@ -1,0 +1,89 @@
+<script>
+  function renderMachinesPage() {
+    const content = document.getElementById('content-area');
+    const template = document.getElementById('tmpl-machines').innerHTML;
+    content.innerHTML = template;
+
+    // เมื่อ Render หน้าเสร็จ ให้เรียกฟังก์ชันดึงข้อมูลจาก Google Sheet
+    fetchMachines();
+  }
+
+  function fetchMachines() {
+    const tbody = document.getElementById('machine-table-body');
+    tbody.innerHTML = `<tr><td colspan="11" class="p-6 text-center text-gray-500"><i class="fa-solid fa-spinner fa-spin mr-2"></i>กำลังดึงข้อมูลเครื่องจักร...</td></tr>`;
+    
+    // เรียกใช้ฟังก์ชัน getMachinesData จาก Code.gs
+    google.script.run.withSuccessHandler(function(data) {
+      if(data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="11" class="p-6 text-center text-gray-500">ไม่พบข้อมูลในระบบ</td></tr>';
+        return;
+      }
+      
+      let html = '';
+      data.forEach(item => {
+        // ข้ามแถวที่ว่างเปล่า (เช็คจากรหัสเครื่องจักร หรือ โครงการ)
+        if(!item.project && !item.machineId && !item.type) return; 
+
+        html += `
+          <tr class="hover:bg-blue-50 border-b transition">
+            <td class="p-3 text-center text-gray-500">${item.no}</td>
+            <td class="p-3 font-medium">${item.project}</td>
+            <td class="p-3 text-[#1E40AF] font-bold">${item.machineId || '-'}</td>
+            <td class="p-3">${item.type}</td>
+            <td class="p-3">${item.brand} ${item.model}</td>
+            <td class="p-3 text-gray-600">${item.size || '-'}</td>
+            <td class="p-3 text-xs text-gray-500">${item.serial || '-'}</td>
+            <td class="p-3 text-center bg-gray-50">${item.qty} ${item.unit}</td>
+            <td class="p-3">${item.owner}</td>
+            <td class="p-3 text-gray-600">${item.dateIn}</td>
+            <td class="p-3 text-center space-x-2">
+              <button onclick="editMachine('${item.machineId}')" class="text-blue-500 hover:text-blue-700 p-1" title="แก้ไข">
+                <i class="fa-solid fa-pen-to-square"></i>
+              </button>
+              <button onclick="deleteMachine('${item.machineId}')" class="text-red-500 hover:text-red-700 p-1" title="ลบ">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </td>
+          </tr>
+        `;
+      });
+      
+      tbody.innerHTML = html;
+
+    }).withFailureHandler(function(error) {
+      tbody.innerHTML = `<tr><td colspan="11" class="p-6 text-center text-red-500">เกิดข้อผิดพลาด: ${error.message}</td></tr>`;
+    }).getMachinesData();
+  }
+
+  // Action Functions
+  function openAddMachineModal() {
+    Swal.fire('เพิ่มเครื่องจักร', 'ฟอร์มบันทึกข้อมูลเครื่องจักรใหม่ (เตรียมเชื่อมต่อ Google Drive ID: 1jZPV5NDh... สำหรับแนบเอกสาร)', 'info');
+  }
+
+  function editMachine(id) {
+    if(!id || id === '-') {
+      Swal.fire('ข้อผิดพลาด', 'ไม่พบรหัสเครื่องจักรสำหรับแก้ไข', 'error');
+      return;
+    }
+    Swal.fire('แก้ไขข้อมูล', `กำลังเปิดฟอร์มแก้ไขรายการ: ${id}`, 'info');
+  }
+
+  function deleteMachine(id) {
+    if(!id || id === '-') return;
+    
+    Swal.fire({
+      title: 'ยืนยันการลบ?',
+      text: `ต้องการลบข้อมูลเครื่องจักรรหัส ${id} ใช่หรือไม่?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'ลบข้อมูล',
+      cancelButtonText: 'ยกเลิก'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        Swal.fire('ระบบจำลอง', 'ระบบลบข้อมูลจะเชื่อมกับ Google Sheet ในเฟสถัดไป', 'success');
+      }
+    });
+  }
+</script>
